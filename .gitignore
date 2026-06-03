@@ -1,0 +1,23 @@
+# Gradle / Android build output
+.gradle/
+build/
+**/build/
+
+# IDE / local machine files
+.idea/
+*.iml
+local.properties
+
+# Kotlin / Android caches
+.kotlin/
+.cxx/
+
+# Generated packages and crash dumps
+*.apk
+*.aab
+*.hprof
+hs_err_pid*
+replay_pid*
+
+# OS files
+.DS_Store

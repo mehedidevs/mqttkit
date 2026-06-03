@@ -1,0 +1,54 @@
+name: Android CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Start local Mosquitto broker
+        run: |
+          cat > "$RUNNER_TEMP/mosquitto.conf" <<'EOF'
+          listener 1883 0.0.0.0
+          allow_anonymous true
+          persistence false
+          EOF
+          docker run -d \
+            --name mosquitto \
+            -p 1883:1883 \
+            -v "$RUNNER_TEMP/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro" \
+            eclipse-mosquitto:2
+          for i in {1..30}; do
+            if nc -z 127.0.0.1 1883; then
+              echo "Mosquitto is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs mosquitto
+          exit 1
+
+      - name: Build and test
+        env:
+          RUN_MQTT_INTEGRATION_TESTS: "true"
+          MQTT_TEST_BROKER_HOST: "127.0.0.1"
+          MQTT_TEST_BROKER_PORT: "1883"
+        run: ./gradlew :core-mqtt:testDebugUnitTest :app:assembleDebug --no-daemon
