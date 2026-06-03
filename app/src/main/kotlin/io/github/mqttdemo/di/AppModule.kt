@@ -18,13 +18,13 @@ import org.koin.dsl.module
  */
 val appModule = module {
     factory<(io.github.mehedidevs.mqttkit.MqttConfig) -> io.github.mehedidevs.mqttkit.MqttClient> { { cfg: io.github.mehedidevs.mqttkit.MqttConfig ->
-        _root_ide_package_.io.food.core.mqtt.HiveMqttClient(
+        HiveMqttClient(
             cfg
         )
     } }
-    single { _root_ide_package_.io.food.core.mqtt.MqttSessionManager(get()) }
+    single { MqttSessionManager(get()) }
     viewModel {
-        _root_ide_package_.io.food.mqttdemo.presentation.MqttViewModel(
+      MqttViewModel(
             application = androidApplication(),
             sessionManager = get()
         )

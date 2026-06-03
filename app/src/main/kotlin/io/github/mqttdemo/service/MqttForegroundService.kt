@@ -9,9 +9,9 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.food.core.mqtt.MqttConnectionState
-import com.food.core.mqtt.MqttSessionManager
-import com.food.mqttdemo.MainActivity
+import io.github.mehedidevs.mqttkit.MqttConnectionState
+import io.github.mehedidevs.mqttkit.MqttSessionManager
+import io.github.mqttdemo.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

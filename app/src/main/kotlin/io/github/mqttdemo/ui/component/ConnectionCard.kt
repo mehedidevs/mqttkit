@@ -29,11 +29,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.food.core.mqtt.MqttConnectionState
-import com.food.mqttdemo.presentation.MqttUiEvent
-import com.food.mqttdemo.presentation.MqttUiState
-import com.food.mqttdemo.presentation.publicBrokerPresets
-import com.food.mqttdemo.ui.theme.*
+import io.github.mehedidevs.mqttkit.MqttConnectionState
+import io.github.mqttdemo.presentation.MqttUiEvent
+import io.github.mqttdemo.presentation.MqttUiState
+import io.github.mqttdemo.presentation.publicBrokerPresets
+import io.github.mqttdemo.ui.theme.*
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable

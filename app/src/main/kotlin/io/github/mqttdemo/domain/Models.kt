@@ -15,7 +15,7 @@ data class LogEntry(
     val payload: String,
     val qos: Int,
     val retained: Boolean,
-    val direction: io.github.mqttdemo.domain.MessageDirection,
+    val direction: MessageDirection,
     val timestamp: Instant = Instant.now()
 )
 

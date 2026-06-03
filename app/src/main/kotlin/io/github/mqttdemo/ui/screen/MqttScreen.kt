@@ -19,11 +19,27 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.food.core.mqtt.MqttConnectionState
-import com.food.mqttdemo.presentation.MqttUiEvent
-import com.food.mqttdemo.presentation.MqttViewModel
 import com.food.mqttdemo.ui.component.*
 import com.food.mqttdemo.ui.theme.*
+import io.github.mehedidevs.mqttkit.MqttConnectionState
+import io.github.mqttdemo.presentation.MqttUiEvent
+import io.github.mqttdemo.presentation.MqttViewModel
+import io.github.mqttdemo.ui.component.ConnectionCard
+import io.github.mqttdemo.ui.component.DashboardPanel
+import io.github.mqttdemo.ui.component.LearnPanel
+import io.github.mqttdemo.ui.component.MessageLogPanel
+import io.github.mqttdemo.ui.component.PublishPanel
+import io.github.mqttdemo.ui.component.SubscribePanel
+import io.github.mqttdemo.ui.theme.AmberReconnect
+import io.github.mqttdemo.ui.theme.CyanPrimary
+import io.github.mqttdemo.ui.theme.GreenConnected
+import io.github.mqttdemo.ui.theme.GreyDisconnected
+import io.github.mqttdemo.ui.theme.NavyDeep
+import io.github.mqttdemo.ui.theme.NavyLight
+import io.github.mqttdemo.ui.theme.NavyMid
+import io.github.mqttdemo.ui.theme.OnNavy
+import io.github.mqttdemo.ui.theme.OnNavySub
+import io.github.mqttdemo.ui.theme.RedError
 import org.koin.androidx.compose.koinViewModel
 
 private enum class Tab(

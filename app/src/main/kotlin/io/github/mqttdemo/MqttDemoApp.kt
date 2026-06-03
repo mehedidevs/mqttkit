@@ -22,7 +22,7 @@ class MqttDemoApp : Application() {
         startKoin {
             androidLogger(if (BuildConfig.DEBUG) Level.ERROR else Level.NONE)
             androidContext(this@MqttDemoApp)
-            modules(_root_ide_package_.io.food.mqttdemo.di.appModule)
+            modules(appModule)
         }
     }
 }

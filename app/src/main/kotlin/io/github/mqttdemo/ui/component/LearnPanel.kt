@@ -20,6 +20,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.food.mqttdemo.ui.theme.*
+import io.github.mqttdemo.ui.theme.CyanPrimary
+import io.github.mqttdemo.ui.theme.NavyLight
+import io.github.mqttdemo.ui.theme.NavyMid
+import io.github.mqttdemo.ui.theme.OnNavy
+import io.github.mqttdemo.ui.theme.OnNavySub
+import io.github.mqttdemo.ui.theme.Qos0Color
+import io.github.mqttdemo.ui.theme.Qos1Color
+import io.github.mqttdemo.ui.theme.Qos2Color
 
 private data class Concept(
     val emoji: String,

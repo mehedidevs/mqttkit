@@ -24,8 +24,8 @@ class MainActivity : ComponentActivity() {
         requestNotificationPermissionIfNeeded()
 
         setContent {
-            _root_ide_package_.io.food.mqttdemo.ui.theme.MqttDemoTheme {
-                _root_ide_package_.io.food.mqttdemo.ui.screen.MqttScreen()
+            MqttDemoTheme {
+                MqttScreen()
             }
         }
     }

@@ -19,10 +19,19 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.food.core.mqtt.MqttConnectionState
-import com.food.mqttdemo.presentation.MqttUiEvent
-import com.food.mqttdemo.presentation.MqttUiState
 import com.food.mqttdemo.ui.theme.*
+import io.github.mehedidevs.mqttkit.MqttConnectionState
+import io.github.mqttdemo.presentation.MqttUiEvent
+import io.github.mqttdemo.presentation.MqttUiState
+import io.github.mqttdemo.ui.theme.CyanPrimary
+import io.github.mqttdemo.ui.theme.NavyDeep
+import io.github.mqttdemo.ui.theme.NavyLight
+import io.github.mqttdemo.ui.theme.OnNavy
+import io.github.mqttdemo.ui.theme.OnNavySub
+import io.github.mqttdemo.ui.theme.Qos0Color
+import io.github.mqttdemo.ui.theme.Qos1Color
+import io.github.mqttdemo.ui.theme.Qos2Color
+import io.github.mqttdemo.ui.theme.RedError
 
 @Composable
 fun PublishPanel(

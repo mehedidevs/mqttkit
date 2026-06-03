@@ -6,6 +6,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -20,11 +21,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.food.mqttdemo.domain.LogEntry
-import com.food.mqttdemo.domain.MessageDirection
-import com.food.mqttdemo.presentation.MqttUiEvent
-import com.food.mqttdemo.presentation.MqttUiState
-import com.food.mqttdemo.ui.theme.*
+import io.github.mqttdemo.domain.LogEntry
+import io.github.mqttdemo.domain.MessageDirection
+import io.github.mqttdemo.presentation.MqttUiEvent
+import io.github.mqttdemo.presentation.MqttUiState
+import io.github.mqttdemo.ui.theme.*
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 

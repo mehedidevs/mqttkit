@@ -2,6 +2,7 @@ package io.github.mqttdemo.ui.component
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -18,10 +19,19 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.food.core.mqtt.MqttConnectionState
-import com.food.mqttdemo.presentation.MqttUiEvent
-import com.food.mqttdemo.presentation.MqttUiState
+
 import com.food.mqttdemo.ui.theme.*
+import io.github.mehedidevs.mqttkit.MqttConnectionState
+import io.github.mqttdemo.presentation.MqttUiEvent
+import io.github.mqttdemo.presentation.MqttUiState
+import io.github.mqttdemo.ui.theme.AmberReconnect
+import io.github.mqttdemo.ui.theme.CyanPrimary
+import io.github.mqttdemo.ui.theme.GreenConnected
+import io.github.mqttdemo.ui.theme.GreyDisconnected
+import io.github.mqttdemo.ui.theme.NavyLight
+import io.github.mqttdemo.ui.theme.NavyMid
+import io.github.mqttdemo.ui.theme.OnNavy
+import io.github.mqttdemo.ui.theme.OnNavySub
 
 @Composable
 fun SubscribePanel(
@@ -75,7 +85,11 @@ fun SubscribePanel(
             // Wildcard quick-picks
             Text("Wildcard examples:", color = OnNavySub, fontSize = 11.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("mqttdemo/#", "mqttdemo/+/sensor/+", "mqttdemo/broadcast/#").forEach { hint ->
+                listOf(
+                    "mqttdemo/#",
+                    "mqttdemo/+/sensor/+",
+                    "mqttdemo/broadcast/#"
+                ).forEach { hint ->
                     AssistChip(
                         onClick = { onEvent(MqttUiEvent.SubscribeTopicChanged(hint)) },
                         label = { Text(hint, fontFamily = FontFamily.Monospace, fontSize = 10.sp) },
@@ -93,14 +107,14 @@ fun SubscribePanel(
         SectionCard(title = "Wildcard Reference") {
             WildcardRow(
                 wildcard = "+",
-                example  = "home/+/temperature",
-                desc     = "Matches exactly ONE level.\nMatches: home/room1/temperature\nNot: home/room1/sensor/temperature"
+                example = "home/+/temperature",
+                desc = "Matches exactly ONE level.\nMatches: home/room1/temperature\nNot: home/room1/sensor/temperature"
             )
             HorizontalDivider(color = NavyLight)
             WildcardRow(
                 wildcard = "#",
-                example  = "home/#",
-                desc     = "Matches ZERO OR MORE levels. Must be last.\nMatches: home/room1, home/room1/temp, home/a/b/c"
+                example = "home/#",
+                desc = "Matches ZERO OR MORE levels. Must be last.\nMatches: home/room1, home/room1/temp, home/a/b/c"
             )
         }
 
@@ -112,7 +126,9 @@ fun SubscribePanel(
 
         if (state.activeSubscriptions.isEmpty()) {
             Box(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 24.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -160,8 +176,10 @@ private fun SubscriptionRow(topic: String, onRemove: () -> Unit) {
                 Text("Collecting messages…", color = GreenConnected, fontSize = 11.sp)
             }
             IconButton(onClick = onRemove, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Default.Close, contentDescription = "Unsubscribe",
-                    tint = GreyDisconnected, modifier = Modifier.size(18.dp))
+                Icon(
+                    Icons.Default.Close, contentDescription = "Unsubscribe",
+                    tint = GreyDisconnected, modifier = Modifier.size(18.dp)
+                )
             }
         }
     }
@@ -170,7 +188,9 @@ private fun SubscriptionRow(topic: String, onRemove: () -> Unit) {
 @Composable
 private fun WildcardRow(wildcard: String, example: String, desc: String) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Surface(

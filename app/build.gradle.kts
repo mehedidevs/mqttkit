@@ -8,12 +8,12 @@ plugins {
 
 android {
     namespace  = "com.food.mqttdemo"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.food.mqttdemo"
-        minSdk        = 24
-        targetSdk     = 35
+        minSdk        = 26
+        targetSdk     = 37
         versionCode   = 1
         versionName   = "1.0.0"
     }
@@ -21,6 +21,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

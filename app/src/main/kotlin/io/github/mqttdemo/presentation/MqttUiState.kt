@@ -33,7 +33,7 @@ data class MqttUiState(
     val activeSubscriptions: List<String> = emptyList(),
 
     // ── Dashboard / sensor simulation ────────────────────────────
-    val sensorReading: io.github.mqttdemo.domain.SensorReading = _root_ide_package_.io.food.mqttdemo.domain.SensorReading(),
+    val sensorReading: SensorReading = SensorReading(),
     val isAutoPublishing: Boolean    = false,
 
     // ── Message log ───────────────────────────────────────────────
@@ -54,28 +54,28 @@ data class PublicBrokerPreset(
 )
 
 val publicBrokerPresets = listOf(
-    _root_ide_package_.io.food.mqttdemo.presentation.PublicBrokerPreset(
+    PublicBrokerPreset(
         name = "HiveMQ",
         host = "broker.hivemq.com",
         port = "1883",
         useTls = false,
         note = "Public test broker"
     ),
-    _root_ide_package_.io.food.mqttdemo.presentation.PublicBrokerPreset(
+ PublicBrokerPreset(
         name = "EMQX",
         host = "broker.emqx.io",
         port = "1883",
         useTls = false,
         note = "Open-source EMQX public broker"
     ),
-    _root_ide_package_.io.food.mqttdemo.presentation.PublicBrokerPreset(
+PublicBrokerPreset(
         name = "Mosquitto",
         host = "test.mosquitto.org",
         port = "1883",
         useTls = false,
         note = "Eclipse Mosquitto test server"
     ),
-    _root_ide_package_.io.food.mqttdemo.presentation.PublicBrokerPreset(
+PublicBrokerPreset(
         name = "EMQX TLS",
         host = "broker.emqx.io",
         port = "8883",
