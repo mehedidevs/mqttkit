@@ -8,7 +8,7 @@ import io.github.mqttdemo.domain.SensorReading
 
 data class MqttUiState(
     // ── Connection ────────────────────────────────────────────────
-    val connectionState: io.github.mehedidevs.mqttkit.MqttConnectionState = _root_ide_package_.io.github.mehedidevs.mqttkit.MqttConnectionState.Idle,
+    val connectionState: io.github.mehedidevs.mqttkit.MqttConnectionState = io.github.mehedidevs.mqttkit.MqttConnectionState.Idle,
     val isDisconnecting: Boolean  = false,
     val brokerHost: String       = "broker.hivemq.com",
     val brokerPort: String       = "1883",
