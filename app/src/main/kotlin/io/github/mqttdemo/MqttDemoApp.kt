@@ -1,6 +1,7 @@
 package io.github.mqttdemo
 
 import android.app.Application
+import com.food.mqttdemo.BuildConfig
 import io.github.mqttdemo.di.appModule
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger

@@ -28,7 +28,7 @@ kotlin {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.kotlinx.coroutines.jdk8)   // needed for CompletableFuture.await()
+    implementation(libs.kotlinx.coroutines.jdk8)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.hivemq.mqtt.client)
     implementation(libs.timber)

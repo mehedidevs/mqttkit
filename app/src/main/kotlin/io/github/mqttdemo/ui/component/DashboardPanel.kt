@@ -32,7 +32,6 @@ import androidx.compose.ui.unit.sp
 
 import io.github.mqttdemo.presentation.MqttUiEvent
 import io.github.mqttdemo.presentation.MqttUiState
-import com.food.mqttdemo.ui.theme.*
 import io.github.mehedidevs.mqttkit.MqttConnectionState
 import io.github.mqttdemo.ui.theme.AmberReconnect
 import io.github.mqttdemo.ui.theme.BlueAccent
