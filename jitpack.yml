@@ -1,2 +1,6 @@
 jdk:
   - openjdk17
+install:
+  # Build only the pure-JVM library; the Android demo :app needs a compileSdk
+  # JitPack's SDK doesn't have. configure-on-demand skips configuring :app.
+  - ./gradlew :mqttkit:publishToMavenLocal -x test --configure-on-demand
