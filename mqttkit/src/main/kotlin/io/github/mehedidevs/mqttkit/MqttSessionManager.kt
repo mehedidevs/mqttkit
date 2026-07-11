@@ -2,7 +2,6 @@ package io.github.mehedidevs.mqttkit
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import timber.log.Timber
 
 /**
  * Manages the lifecycle of an [MqttClient] session.
@@ -17,6 +16,7 @@ import timber.log.Timber
  * from multiple coroutines simultaneously.
  */
 class MqttSessionManager(
+    private val logger: MqttLogger = MqttLogger.None,
     private val clientFactory: (MqttConfig) -> MqttClient
 ) {
     private val mutex = Mutex()
@@ -30,13 +30,13 @@ class MqttSessionManager(
      */
     suspend fun start(config: MqttConfig): MqttClient = mutex.withLock {
         if (client != null) {
-            Timber.w("MqttSessionManager.start: stopping existing session first")
+            logger.warn("MqttSessionManager.start: stopping existing session first")
             client?.disconnect()
         }
         val c = clientFactory(config)
         c.connect()
         client = c
-        Timber.i("MqttSessionManager: session started (host=${config.host}:${config.port})")
+        logger.info("MqttSessionManager: session started (host=${config.host}:${config.port})")
         c
     }
 
@@ -44,7 +44,7 @@ class MqttSessionManager(
     suspend fun stop() = mutex.withLock {
         client?.disconnect()
         client = null
-        Timber.i("MqttSessionManager: session stopped")
+        logger.info("MqttSessionManager: session stopped")
     }
 
     /**

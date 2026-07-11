@@ -27,18 +27,35 @@ The module does not force a specific app architecture. You can use it with Koin,
 
 ## Installation
 
-Add the module to your project settings:
+MqttKit is a plain Kotlin/JVM library — it works in Android apps, Ktor/Spring
+backends, desktop apps, and CLI tools.
 
-```kotlin
-include(":core-mqtt")
-```
-
-Add the dependency to your app module:
+As a published artifact (after `./gradlew :mqttkit:publishToMavenLocal` or a
+JitPack/Maven Central release):
 
 ```kotlin
 dependencies {
-    implementation(project(":core-mqtt"))
+    implementation("io.github.mehedidevs:mqttkit:0.1.0")
 }
+```
+
+Or as an included module:
+
+```kotlin
+// settings.gradle.kts
+include(":mqttkit")
+
+// app/build.gradle.kts
+dependencies {
+    implementation(project(":mqttkit"))
+}
+```
+
+The library logs nothing by default. To see MQTT logs, pass an `MqttLogger`
+adapter for your logging framework (see `MqttLogger` docs for a Timber example):
+
+```kotlin
+HiveMqttClient(config, logger = MqttLogger.Stdout)
 ```
 
 The app that uses this module must declare internet permission:
@@ -391,7 +408,70 @@ or:
 client.disconnect()
 ```
 
-the client does not auto-reconnect.
+the client does not auto-reconnect. Manual disconnect also completes all open
+`subscribe` flows, so collectors terminate instead of waiting forever.
+
+## Custom TLS (Mutual TLS, Private CAs)
+
+By default `useTls = true` uses the platform's trusted CAs. For brokers with a
+private CA or client-certificate auth (AWS IoT Core, hardened Mosquitto), pass
+an `MqttTlsConfig`:
+
+```kotlin
+val config = MqttConfig(
+    host = "broker.internal.example.com",
+    port = 8883,
+    clientId = "device-42",
+    useTls = true,
+    tlsConfig = MqttTlsConfig(
+        trustManagerFactory = tmf,   // trust your private broker CA
+        keyManagerFactory = kmf      // present a client certificate (mutual TLS)
+    )
+)
+```
+
+All fields are optional; anything left null falls back to platform defaults.
+The same TLS settings apply to every endpoint with `useTls = true`, including
+fallback endpoints.
+
+## WebSocket Transport
+
+For brokers only reachable through HTTP infrastructure (port 443, proxies,
+load balancers), enable MQTT-over-WebSocket per endpoint:
+
+```kotlin
+// wss://broker.example.com:443/mqtt
+val config = MqttConfig(
+    host = "broker.example.com",
+    port = 443,
+    clientId = "client-1",
+    useTls = true,
+    webSocket = MqttWebSocketConfig() // serverPath = "mqtt" by default
+)
+```
+
+Fallback endpoints can mix transports — for example plain TCP primary with a
+WebSocket fallback on 443.
+
+## Backpressure
+
+Each `subscribe` collector has a buffer (default 64 messages). When a
+collector processes messages slower than they arrive, the default policy
+`BufferOverflow.DROP_OLDEST` keeps the newest messages and stays live — the
+right choice for telemetry and dashboards. If every message matters, switch
+to suspend-and-log:
+
+```kotlin
+val config = MqttConfig(
+    host = "broker.example.com",
+    clientId = "client-1",
+    subscribeBufferSize = 256,
+    subscribeOverflow = BufferOverflow.SUSPEND // drops are logged via MqttLogger
+)
+```
+
+When multiple collectors subscribe to the same topic at different QoS levels,
+the shared broker subscription uses the highest requested QoS.
 
 ## Retry Helpers
 

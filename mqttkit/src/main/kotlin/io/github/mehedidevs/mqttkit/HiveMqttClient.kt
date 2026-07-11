@@ -14,14 +14,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.future.await
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import timber.log.Timber
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -35,17 +35,19 @@ import java.util.concurrent.atomic.AtomicBoolean
  *    HiveMQ's built-in `resubscribeIfSessionPresent` only works when the
  *    broker still has your session (cleanStart=false AND session hasn't
  *    expired). It's unreliable across network changes and broker restarts.
- *    Solution: We keep our own [activeSubscriptions] map and re-apply every
- *    subscription in the `connectedListener` — giving us deterministic
- *    behaviour regardless of broker session state.
+ *    Solution: We keep our own [topics] map and re-apply every subscription
+ *    in the `connectedListener` — giving us deterministic behaviour
+ *    regardless of broker session state.
  *
  * 2. SINGLE FLOW PER TOPIC (fan-out via callbacks)
  *    A naive implementation creates one broker subscription per Flow collector.
  *    If three screens subscribe to the same topic, you pay three times.
- *    Solution: [topicSubscribers] maps topic → Set<callback>. Only the *first*
- *    subscriber actually talks to the broker; subsequent ones just register
- *    their callback. The broker subscription is removed only when the last
- *    callback unregisters.
+ *    Solution: [topics] maps topic → subscribers. Only the *first* subscriber
+ *    actually talks to the broker; subsequent ones just register. The broker
+ *    subscription is removed only when the last subscriber unregisters.
+ *    All map mutations go through ConcurrentHashMap.compute so register/
+ *    unregister can't race, and broker SUBSCRIBE/UNSUBSCRIBE packets are
+ *    serialized through [brokerOps] so they can't be reordered.
  *
  * 3. MUTEX-GUARDED CONNECT/DISCONNECT
  *    Without a lock, calling connect() from two coroutines simultaneously
@@ -55,35 +57,69 @@ import java.util.concurrent.atomic.AtomicBoolean
  *    Configured at connect time via [MqttConfig.willMessage]. The broker
  *    publishes the will automatically if the client disconnects ungracefully.
  *    This lets subscribers know the device went offline without polling.
+ *
+ * 5. AUTO-RECONNECT ONLY AFTER A SUCCESSFUL CONNECT
+ *    HiveMQ fires the disconnected listener for *failed initial connect
+ *    attempts* too. If we enabled the reconnector there, a dead primary
+ *    endpoint would keep retrying in the background while [connect] moves on
+ *    to a fallback endpoint — leaving two live clients. Each built client
+ *    carries an `everConnected` flag and only auto-reconnects once it has
+ *    been connected at least once; initial connect failures are handled
+ *    solely by the endpoint loop in [connect].
+ *
+ * 6. SHARED SUBSCRIPTIONS USE THE HIGHEST REQUESTED QoS
+ *    When collectors of the same topic ask for different QoS levels, the
+ *    broker subscription is (re-)established at the maximum. MQTT treats a
+ *    repeated SUBSCRIBE for the same filter as a replacement, so upgrading
+ *    is safe and message delivery is uninterrupted.
+ *
+ * 7. FLOWS COMPLETE ON DISCONNECT
+ *    [disconnect] closes every open subscribe flow so collectors terminate
+ *    instead of waiting forever on a client that will never emit again.
  */
 class HiveMqttClient(
-    private val config: MqttConfig
+    private val config: MqttConfig,
+    private val logger: MqttLogger = MqttLogger.None
 ) : MqttClient {
 
-    // ── Internal coroutine scope (IO dispatcher, outlives any single ViewModel) ──
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** One registered collector of a topic flow. */
+    private class TopicSubscriber(
+        /** Pushes a message into the collector's flow. */
+        val deliver: (MqttMessage) -> Unit,
+        /** Completes the collector's flow (used by [disconnect]). */
+        val close: () -> Unit
+    )
+
+    /** Immutable per-topic state; replaced atomically via [ConcurrentHashMap.compute]. */
+    private class TopicState(
+        /** QoS the broker subscription is (or should be) established at — max of all requests. */
+        val qos: Int,
+        val subscribers: List<TopicSubscriber>
+    )
+
+    // ── Internal coroutine scope (IO dispatcher, outlives any single ViewModel).
+    //    Recreated on connect() so the client is reusable after disconnect(). ──
+    private var scope = newScope()
     private val mutex = Mutex()
+
+    /** Serializes broker SUBSCRIBE/UNSUBSCRIBE packets so they can't be reordered. */
+    private val brokerOps = Mutex()
 
     // ── Connection state exposed as a StateFlow ──────────────────────────────────
     private val _state = MutableStateFlow<MqttConnectionState>(MqttConnectionState.Idle)
     override val connectionState: StateFlow<MqttConnectionState> = _state.asStateFlow()
 
     /**
-     * topic → QoS: every topic that *should* be subscribed.
-     * Persists across reconnects so we can re-apply them.
+     * topic → subscribers + effective QoS: every topic that *should* be
+     * subscribed. Persists across reconnects so we can re-apply them.
      */
-    private val activeSubscriptions = ConcurrentHashMap<String, Int>()
-
-    /**
-     * topic → Set of message callbacks.
-     * Multiple Flow collectors of the same topic share one broker subscription.
-     */
-    private val topicSubscribers =
-        ConcurrentHashMap<String, CopyOnWriteArraySet<(MqttMessage) -> Unit>>()
+    private val topics = ConcurrentHashMap<String, TopicState>()
 
     private var client: Mqtt5AsyncClient? = null
     private var activeEndpoint: MqttBrokerEndpoint = config.primaryEndpoint
     private val manualDisconnect = AtomicBoolean(false)
+
+    private fun newScope() = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // ════════════════════════════════════════════════════════════════════════════
     //  connect()
@@ -93,11 +129,15 @@ class HiveMqttClient(
         if (_state.value is MqttConnectionState.Connected ||
             _state.value is MqttConnectionState.Connecting
         ) {
-            Timber.d("MQTT connect() skipped — already ${_state.value}")
+            logger.debug("MQTT connect() skipped — already ${_state.value}")
             return
         }
         _state.value = MqttConnectionState.Connecting
         manualDisconnect.set(false)
+
+        // disconnect() cancels the scope; a fresh connect() needs a live one so
+        // re-subscribe and unsubscribe launches don't silently no-op.
+        if (!scope.isActive) scope = newScope()
 
         val failures = mutableListOf<String>()
 
@@ -107,11 +147,11 @@ class HiveMqttClient(
                 client = c
                 activeEndpoint = endpoint
                 sendConnectPacket(c)
-                Timber.i("MQTT handshake complete (${endpoint.host}:${endpoint.port}, tls=${endpoint.useTls})")
+                logger.info("MQTT handshake complete (${endpoint.host}:${endpoint.port}, tls=${endpoint.useTls})")
                 return
             } catch (t: Throwable) {
                 failures += "${endpoint.host}:${endpoint.port} tls=${endpoint.useTls}: ${t.message}"
-                Timber.w(t, "MQTT connect attempt failed for ${endpoint.host}:${endpoint.port}")
+                logger.warn("MQTT connect attempt failed for ${endpoint.host}:${endpoint.port}", t)
                 runCatching { client?.disconnect()?.await() }
                 client = null
 
@@ -120,7 +160,7 @@ class HiveMqttClient(
                         "MQTT connect failed for all configured endpoints: ${failures.joinToString(" | ")}",
                         t
                     )
-                    Timber.e(error, "MQTT connect() failed")
+                    logger.error("MQTT connect() failed", error)
                     _state.value = MqttConnectionState.Failed(error)
                     throw error
                 }
@@ -129,6 +169,11 @@ class HiveMqttClient(
     }
 
     private fun buildClient(endpoint: MqttBrokerEndpoint): Mqtt5AsyncClient {
+        // Set once this specific client instance completes a handshake. Gates the
+        // reconnector so failed *initial* attempts never spawn background retries
+        // (see architecture decision 5).
+        val everConnected = AtomicBoolean(false)
+
         val builder = Mqtt5Client.builder()
                 .identifier(config.clientId)
                 .serverHost(endpoint.host)
@@ -139,30 +184,44 @@ class HiveMqttClient(
                 // KEY FIX: re-subscribe all tracked topics here so subscriptions
                 // survive network drops, server restarts, and session expiry.
                 .addConnectedListener {
-                    Timber.i("MQTT connected to ${activeEndpoint.host}:${activeEndpoint.port}")
+                    everConnected.set(true)
+                    logger.info("MQTT connected to ${endpoint.host}:${endpoint.port}")
                     _state.value = MqttConnectionState.Connected
-                    if (activeSubscriptions.isNotEmpty()) {
+                    if (topics.isNotEmpty()) {
                         scope.launch {
-                            activeSubscriptions.forEach { (topic, qos) ->
-                                runCatching { applySubscribe(topic, qos) }
-                                    .onFailure { Timber.w(it, "Re-subscribe failed: $topic") }
+                            brokerOps.withLock {
+                                topics.forEach { (topic, state) ->
+                                    runCatching { applySubscribe(topic, state.qos) }
+                                        .onFailure { logger.warn("Re-subscribe failed: $topic", it) }
+                                }
                             }
-                            Timber.d("Re-subscribed ${activeSubscriptions.size} topic(s) after (re)connect")
+                            logger.debug("Re-subscribed ${topics.size} topic(s) after (re)connect")
                         }
                     }
                 }
 
                 // ── DISCONNECTED listener ────────────────────────────────────
-                // Fires on unexpected disconnect. We use HiveMQ's reconnector
-                // with exponential back-off.
+                // Fires on unexpected disconnect AND on failed initial connect
+                // attempts. We use HiveMQ's reconnector with exponential back-off,
+                // but only after this client has connected successfully once.
                 .addDisconnectedListener { ctx ->
                     if (manualDisconnect.get()) {
                         _state.value = MqttConnectionState.Disconnected("manual")
                         return@addDisconnectedListener
                     }
 
+                    if (!everConnected.get()) {
+                        // Initial connect attempt failed: let connect()'s endpoint
+                        // loop decide what happens next; no background reconnect.
+                        logger.debug(
+                            "MQTT initial connect attempt failed for " +
+                                "${endpoint.host}:${endpoint.port} (cause=${ctx.cause.message})"
+                        )
+                        return@addDisconnectedListener
+                    }
+
                     val attempt = ctx.reconnector.attempts
-                    Timber.w("MQTT disconnected (cause=${ctx.cause?.message}, attempt=$attempt)")
+                    logger.warn("MQTT disconnected (cause=${ctx.cause.message}, attempt=$attempt)")
 
                     _state.value = if (config.automaticReconnect) {
                         val delayMs = minOf(
@@ -174,15 +233,34 @@ class HiveMqttClient(
                             .delay(delayMs, java.util.concurrent.TimeUnit.MILLISECONDS)
                         MqttConnectionState.Reconnecting(attempt + 1)
                     } else {
-                        MqttConnectionState.Disconnected(ctx.cause?.message)
+                        MqttConnectionState.Disconnected(ctx.cause.message)
                     }
                 }
 
         if (endpoint.useTls) {
-            builder.sslConfig(MqttClientSslConfig.builder().build())
+            builder.sslConfig(buildSslConfig())
+        }
+
+        endpoint.webSocket?.let { ws ->
+            builder.webSocketConfig()
+                .serverPath(ws.serverPath)
+                .subprotocol(ws.subprotocol)
+                .applyWebSocketConfig()
+            logger.debug("MQTT WebSocket transport enabled (path=${ws.serverPath})")
         }
 
         return builder.buildAsync()
+    }
+
+    /** Translate [MqttConfig.tlsConfig] (plain javax.net.ssl types) into HiveMQ's ssl config. */
+    private fun buildSslConfig(): MqttClientSslConfig {
+        val tls = config.tlsConfig ?: return MqttClientSslConfig.builder().build()
+        val builder = MqttClientSslConfig.builder()
+        tls.keyManagerFactory?.let { builder.keyManagerFactory(it) }
+        tls.trustManagerFactory?.let { builder.trustManagerFactory(it) }
+        tls.protocols?.let { builder.protocols(it) }
+        tls.cipherSuites?.let { builder.cipherSuites(it) }
+        return builder.build()
     }
 
     private suspend fun sendConnectPacket(c: Mqtt5AsyncClient) {
@@ -218,7 +296,7 @@ class HiveMqttClient(
                 .qos(qosOf(will.qos))
                 .retain(will.retained)
                 .applyWillPublish()
-            Timber.d("LWT configured: topic=${will.topic}")
+            logger.debug("LWT configured: topic=${will.topic}")
         }
 
         connectBuilder.send().await()
@@ -234,13 +312,17 @@ class HiveMqttClient(
                 manualDisconnect.set(true)
                 client?.disconnect()?.await()
             } catch (t: Throwable) {
-                Timber.w(t, "MQTT disconnect error (ignored)")
+                logger.warn("MQTT disconnect error (ignored)", t)
             } finally {
                 client = null
-                activeSubscriptions.clear()
-                topicSubscribers.clear()
+                // Complete all open subscribe flows so collectors terminate
+                // instead of hanging on a dead client (decision 7). Clear the
+                // map first so awaitClose cleanup sees no active topics.
+                val openSubscribers = topics.values.flatMap { it.subscribers }
+                topics.clear()
+                openSubscribers.forEach { runCatching { it.close() } }
                 _state.value = MqttConnectionState.Disconnected("manual")
-                Timber.i("MQTT disconnected (manual)")
+                logger.info("MQTT disconnected (manual)")
                 scope.cancel()
             }
         }
@@ -260,9 +342,9 @@ class HiveMqttClient(
             .retain(message.retained)
             .send()
             .await()
-        Timber.d("MQTT → published topic=${message.topic} qos=${message.qos} retained=${message.retained}")
+        logger.debug("MQTT → published topic=${message.topic} qos=${message.qos} retained=${message.retained}")
         Unit
-    }.onFailure { Timber.w(it, "MQTT publish failed: ${message.topic}") }
+    }.onFailure { logger.warn("MQTT publish failed: ${message.topic}", it) }
 
     // ════════════════════════════════════════════════════════════════════════════
     //  subscribe()
@@ -270,45 +352,79 @@ class HiveMqttClient(
 
     /**
      * Returns a cold [Flow] that:
-     *  1. Registers a callback in [topicSubscribers].
-     *  2. If this is the *first* subscriber, tells the broker to subscribe.
-     *  3. On cancellation, removes the callback; if last subscriber, unsubscribes.
+     *  1. Atomically registers a subscriber in [topics].
+     *  2. If it's the first subscriber — or requests a higher QoS than the
+     *     current broker subscription — (re-)subscribes at the broker.
+     *  3. On cancellation, removes the subscriber; the last one out sends
+     *     UNSUBSCRIBE.
      *
      * Wildcards are fully supported: `sensors/+/temp`, `home/#`, etc.
+     * Backpressure is governed by [MqttConfig.subscribeBufferSize] and
+     * [MqttConfig.subscribeOverflow].
      */
     override fun subscribe(topic: String, qos: Int): Flow<MqttMessage> = callbackFlow {
         require(topic.isNotBlank()) { "MQTT topic cannot be blank." }
         require(qos in 0..2) { "MQTT qos must be 0, 1, or 2." }
-        val listener: (MqttMessage) -> Unit = { trySend(it) }
 
-        val subscribers = topicSubscribers.getOrPut(topic) { CopyOnWriteArraySet() }
-        val isFirstSubscriber = subscribers.isEmpty()
-        subscribers.add(listener)
+        val subscriber = TopicSubscriber(
+            deliver = { message ->
+                val result = trySend(message)
+                if (result.isFailure && !result.isClosed) {
+                    logger.warn("MQTT message dropped (collector too slow) topic=${message.topic}")
+                }
+            },
+            close = { channel.close() }
+        )
 
-        if (isFirstSubscriber) {
-            activeSubscriptions[topic] = qos
-            if (_state.value is MqttConnectionState.Connected) {
-                runCatching { applySubscribe(topic, qos) }
-                    .onFailure { Timber.w(it, "Subscribe failed; will retry on reconnect") }
+        // Atomic register: compute() prevents racing a concurrent last-out
+        // removal of the same topic (decision 2).
+        var brokerQos = qos
+        var needsBrokerSubscribe = false
+        topics.compute(topic) { _, current ->
+            if (current == null) {
+                needsBrokerSubscribe = true
+                brokerQos = qos
+                TopicState(qos, listOf(subscriber))
+            } else {
+                brokerQos = maxOf(current.qos, qos)
+                needsBrokerSubscribe = brokerQos > current.qos
+                TopicState(brokerQos, current.subscribers + subscriber)
             }
         }
 
-        Timber.d("MQTT ← subscribed topic=$topic qos=$qos (totalListeners=${subscribers.size})")
+        if (needsBrokerSubscribe && _state.value is MqttConnectionState.Connected) {
+            brokerOps.withLock {
+                runCatching { applySubscribe(topic, brokerQos) }
+                    .onFailure { logger.warn("Subscribe failed; will retry on reconnect", it) }
+            }
+        }
+
+        logger.debug(
+            "MQTT ← subscribed topic=$topic qos=$qos " +
+                "(brokerQos=$brokerQos, totalListeners=${topics[topic]?.subscribers?.size ?: 0})"
+        )
 
         awaitClose {
-            subscribers.remove(listener)
-            if (subscribers.isEmpty()) {
-                topicSubscribers.remove(topic)
-                activeSubscriptions.remove(topic)
+            val remaining = topics.compute(topic) { _, current ->
+                val left = current?.subscribers?.filterNot { it === subscriber }
+                if (left.isNullOrEmpty()) null else TopicState(current.qos, left)
+            }
+            if (remaining == null) {
                 scope.launch {
-                    runCatching {
-                        client?.unsubscribeWith()?.topicFilter(topic)?.send()?.await()
-                        Timber.d("MQTT ← unsubscribed topic=$topic (no more listeners)")
+                    brokerOps.withLock {
+                        // Re-check under the lock: a new collector may have
+                        // re-registered the topic while this launch was queued.
+                        if (!topics.containsKey(topic)) {
+                            runCatching {
+                                client?.unsubscribeWith()?.topicFilter(topic)?.send()?.await()
+                                logger.debug("MQTT ← unsubscribed topic=$topic (no more listeners)")
+                            }
+                        }
                     }
                 }
             }
         }
-    }
+    }.buffer(config.subscribeBufferSize, config.subscribeOverflow)
 
     // ════════════════════════════════════════════════════════════════════════════
     //  Internal helpers
@@ -327,10 +443,10 @@ class HiveMqttClient(
                     qos      = publish.qos.code,
                     retained = publish.isRetain
                 )
-                // Fan-out: deliver to all registered callbacks for this topic
-                topicSubscribers[topic]?.forEach { cb ->
-                    runCatching { cb(msg) }
-                        .onFailure { Timber.e(it, "MQTT listener threw for topic=$topic") }
+                // Fan-out: deliver to all registered subscribers for this topic
+                topics[topic]?.subscribers?.forEach { sub ->
+                    runCatching { sub.deliver(msg) }
+                        .onFailure { logger.error("MQTT listener threw for topic=$topic", it) }
                 }
             }
             .send()

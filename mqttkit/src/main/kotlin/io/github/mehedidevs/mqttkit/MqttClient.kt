@@ -39,7 +39,8 @@ interface MqttClient {
      * Gracefully close the connection and clear tracked subscriptions.
      *
      * This is treated as an intentional/manual disconnect and must not trigger
-     * automatic reconnect.
+     * automatic reconnect. All open [subscribe] flows complete so collectors
+     * terminate instead of waiting on a client that will never emit again.
      */
     suspend fun disconnect()
 
@@ -56,8 +57,10 @@ interface MqttClient {
      * matching messages.
      *
      * The subscription is established lazily when the [Flow] is collected and
-     * removed from the broker when collection is cancelled. Implementations
-     * should re-subscribe automatically after reconnect.
+     * removed from the broker when the last collector cancels. Collectors of
+     * the same topic share one broker subscription, established at the highest
+     * QoS any of them requested. Implementations should re-subscribe
+     * automatically after reconnect.
      */
     fun subscribe(topic: String, qos: Int = 1): Flow<MqttMessage>
 }

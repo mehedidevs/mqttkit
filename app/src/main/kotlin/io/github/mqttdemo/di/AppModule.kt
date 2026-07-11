@@ -19,10 +19,11 @@ import org.koin.dsl.module
 val appModule = module {
     factory<(io.github.mehedidevs.mqttkit.MqttConfig) -> io.github.mehedidevs.mqttkit.MqttClient> { { cfg: io.github.mehedidevs.mqttkit.MqttConfig ->
         HiveMqttClient(
-            cfg
+            cfg,
+            logger = TimberMqttLogger
         )
     } }
-    single { MqttSessionManager(get()) }
+    single { MqttSessionManager(logger = TimberMqttLogger, clientFactory = get()) }
     viewModel {
       MqttViewModel(
             application = androidApplication(),

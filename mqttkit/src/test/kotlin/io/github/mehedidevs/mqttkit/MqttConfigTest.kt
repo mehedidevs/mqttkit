@@ -58,6 +58,36 @@ class MqttConfigTest {
         )
     }
 
+    @Test(expected = IllegalArgumentException::class)
+    fun zeroSubscribeBufferSizeIsRejected() {
+        MqttConfig(host = "broker.example.com", clientId = "client-1", subscribeBufferSize = 0)
+    }
+
+    @Test
+    fun webSocketConfigPropagatesToPrimaryEndpoint() {
+        val config = MqttConfig(
+            host = "broker.example.com",
+            port = 443,
+            clientId = "client-1",
+            useTls = true,
+            webSocket = MqttWebSocketConfig(serverPath = "ws")
+        )
+
+        assertEquals("ws", config.primaryEndpoint.webSocket?.serverPath)
+        assertEquals("mqtt", config.primaryEndpoint.webSocket?.subprotocol)
+        assertTrue(config.primaryEndpoint.useTls)
+    }
+
+    @Test
+    fun tlsConfigDefaultsToPlatformDefaults() {
+        val tls = MqttTlsConfig()
+
+        assertEquals(null, tls.keyManagerFactory)
+        assertEquals(null, tls.trustManagerFactory)
+        assertEquals(null, tls.protocols)
+        assertEquals(null, tls.cipherSuites)
+    }
+
     @Suppress("DEPRECATION")
     @Test
     fun legacyUsernamePasswordConstructorMapsToBasicAuth() {

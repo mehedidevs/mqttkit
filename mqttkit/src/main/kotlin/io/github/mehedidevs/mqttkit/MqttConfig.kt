@@ -1,5 +1,7 @@
 package io.github.mehedidevs.mqttkit
 
+import kotlinx.coroutines.channels.BufferOverflow
+
 /**
  * MQTT Last Will and Testament.
  *
@@ -29,7 +31,9 @@ data class MqttWillMessage(
 data class MqttBrokerEndpoint(
     val host: String,
     val port: Int = 1883,
-    val useTls: Boolean = false
+    val useTls: Boolean = false,
+    /** Non-null switches this endpoint to MQTT-over-WebSocket transport. */
+    val webSocket: MqttWebSocketConfig? = null
 ) {
     init {
         require(host.isNotBlank()) { "MQTT endpoint host cannot be blank." }
@@ -55,6 +59,10 @@ data class MqttConfig(
     val auth: MqttAuth = MqttAuth.None,
     /** Whether the primary endpoint should use TLS. */
     val useTls: Boolean = false,
+    /** Non-null switches the primary endpoint to MQTT-over-WebSocket transport. */
+    val webSocket: MqttWebSocketConfig? = null,
+    /** Custom TLS settings (mutual TLS, private CAs) for every TLS endpoint. */
+    val tlsConfig: MqttTlsConfig? = null,
     /** Backup broker endpoints tried in order during initial connect. */
     val fallbackEndpoints: List<MqttBrokerEndpoint> = emptyList(),
 
@@ -74,11 +82,26 @@ data class MqttConfig(
     val maxReconnectDelayMs: Long = 30_000,
 
     /** Optional Last Will and Testament message. */
-    val willMessage: MqttWillMessage? = null
+    val willMessage: MqttWillMessage? = null,
+
+    /**
+     * Per-collector buffer for [MqttClient.subscribe] flows. When a collector
+     * falls behind, up to this many messages are held before
+     * [subscribeOverflow] kicks in.
+     */
+    val subscribeBufferSize: Int = 64,
+    /**
+     * What happens when a subscribe buffer is full. The default
+     * [BufferOverflow.DROP_OLDEST] keeps the flow alive and favours the most
+     * recent messages — usually right for telemetry. Use
+     * [BufferOverflow.SUSPEND] if every message must be processed (drops are
+     * then logged via [MqttLogger]).
+     */
+    val subscribeOverflow: BufferOverflow = BufferOverflow.DROP_OLDEST
 ) {
-    /** Primary endpoint derived from [host], [port], and [useTls]. */
+    /** Primary endpoint derived from [host], [port], [useTls], and [webSocket]. */
     val primaryEndpoint: MqttBrokerEndpoint
-        get() = MqttBrokerEndpoint(host = host, port = port, useTls = useTls)
+        get() = MqttBrokerEndpoint(host = host, port = port, useTls = useTls, webSocket = webSocket)
 
     /** Primary endpoint followed by fallback endpoints. */
     val endpoints: List<MqttBrokerEndpoint>
@@ -138,5 +161,6 @@ data class MqttConfig(
             "MQTT maxReconnectDelayMs must be greater than or equal to initialReconnectDelayMs."
         }
         require(willMessage?.topic?.isNotBlank() != false) { "MQTT will topic cannot be blank." }
+        require(subscribeBufferSize >= 1) { "MQTT subscribeBufferSize must be at least 1." }
     }
 }
